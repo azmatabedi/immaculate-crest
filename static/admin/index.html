@@ -1,0 +1,120 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Immaculate Crest Admin</title>
+<style>
+:root{--n:#1C2733;--g:#B8935F;--c:#F5F1EA;--l:#ddd5c5}*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--c);color:var(--n)}
+header{background:var(--n);color:var(--c);padding:10px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+header nav{display:flex;gap:4px;flex-wrap:wrap}header button{background:none;border:0;color:var(--c);padding:7px 11px;border-radius:6px;cursor:pointer;font:inherit}
+header button.on{background:var(--g);color:var(--n)}main{max-width:1100px;margin:18px auto;padding:0 14px}
+.card{background:#fff;border:1px solid var(--l);border-radius:10px;padding:14px;margin-bottom:14px;overflow-x:auto}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--l);vertical-align:top}
+tr.k{cursor:pointer}tr.k:hover{background:var(--c)}
+input,select,textarea{font:inherit;padding:7px 9px;border:1px solid var(--l);border-radius:7px;width:100%;background:#fff;color:var(--n)}
+.b{background:var(--n);color:#fff;border:0;padding:8px 14px;border-radius:7px;cursor:pointer;font:inherit}.b.g{background:var(--g);color:var(--n)}.b.r{background:#b84a3e}.b.s{padding:4px 9px;font-size:12px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}.stat{font:700 30px Georgia,serif}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;background:var(--c);border:1px solid var(--l);font-size:12px}
+label{display:block;font-weight:600;font-size:12px;margin-bottom:3px}.th{width:120px}.th img,.th video{width:120px;height:90px;object-fit:cover;border-radius:6px;background:#000}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap}#login{max-width:340px;margin:12vh auto}.m{color:#6b7480;font-size:12px}
+.it{display:grid;grid-template-columns:3fr 1fr 1fr;gap:8px;margin-bottom:6px}
+</style></head><body>
+<div id="login" class="card"><h2>Immaculate Crest admin</h2><label>Username</label><input id="u" autocomplete="username"><br><br><label>Password</label><input id="p" type="password" autocomplete="current-password"><br><br><button class="b g" id="lg">Sign in</button> <span id="le" class="m"></span></div>
+<div id="app" hidden><header><b>Immaculate Crest</b><nav id="nav"></nav><button id="out" style="margin-left:auto">Sign out</button></header><main id="v"></main></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fd=s=>s?new Date(s+"Z").toLocaleString():"";let T=sessionStorage.getItem("t");
+async function api(p,o={}){o.headers=Object.assign({Authorization:"Bearer "+T},o.headers||{});
+ if(o.json!==undefined){o.body=JSON.stringify(o.json);o.headers["Content-Type"]="application/json";delete o.json}
+ const r=await fetch("/api/admin"+p,o);if(r.status===401){out();throw new Error("Session expired")}
+ const j=(r.headers.get("content-type")||"").includes("json")?await r.json():null;
+ if(!r.ok)throw new Error(typeof(j&&j.detail)==="string"?j.detail:"Request failed");return j}
+async function dl(p,name){const r=await fetch("/api/admin"+p,{headers:{Authorization:"Bearer "+T}});if(!r.ok)return alert("Download failed");
+ const a=document.createElement("a");a.href=URL.createObjectURL(await r.blob());a.download=name;a.click()}
+const F=(fields,v={})=>fields.map(f=>`<div><label>${f.l}</label>`+(f.t==="area"?`<textarea name="${f.k}" rows="3">${esc(v[f.k])}</textarea>`:
+ f.t==="check"?`<input type="checkbox" name="${f.k}" ${v[f.k]?"checked":""} style="width:auto">`:
+ f.t==="select"?`<select name="${f.k}">${f.o.map(o=>`<option value="${esc(o[0])}" ${String(v[f.k]==null?"":v[f.k])===String(o[0])?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`:
+ `<input name="${f.k}" type="${f.t||"text"}" value="${esc(v[f.k])}">`)+`</div>`).join("");
+const R=(root,fields)=>{const o={};fields.forEach(f=>{const e=root.querySelector(`[name="${f.k}"]`);o[f.k]=f.t==="check"?e.checked:e.value});return o};
+const wrap=fn=>async e=>{try{await fn(e)}catch(x){alert(x.message)}};
+function out(){sessionStorage.removeItem("t");T=null;$("#app").hidden=true;$("#login").hidden=false}
+$("#lg").onclick=async()=>{const r=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("#u").value,password:$("#p").value})});
+ const j=await r.json();if(!r.ok){$("#le").textContent=j.detail;return}T=j.token;sessionStorage.setItem("t",T);start()};
+$("#out").onclick=out;
+const STAT=["New Inquiry","Quotation Sent","Awaiting Confirmation","Confirmed","In Production","Dispatched","Completed"];
+/* ---- generic CRUD view ---- */
+function crud(path,fields,cols,title,toggle){return async()=>{let eid=null,rows=await api("/"+path);const root=$("#v");
+ const draw=()=>{root.innerHTML=`<div class="card"><h3>${title}</h3><div id="f" class="row">${F(fields)}</div><p><button class="b g" data-save>Add</button></p></div>
+ <div class="card"><table><tr>${cols.map(c=>`<th>${c[1]}</th>`).join("")}<th></th></tr>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(c[0](r))}</td>`).join("")}<td>
+ ${toggle?`<button class="b s" data-tog="${r.id}">${r.approved?"Hide":"Approve"}</button> `:""}<button class="b s" data-edit="${r.id}">Edit</button> <button class="b s r" data-del="${r.id}">Delete</button></td></tr>`).join("")}</table></div>`;eid=null};
+ draw();root.onclick=wrap(async e=>{const t=e.target,id=+(t.dataset.edit||t.dataset.del||t.dataset.tog||0);
+  if("save" in t.dataset){const b=R($("#f"),fields);eid?await api(`/${path}/${eid}`,{method:"PUT",json:b}):await api("/"+path,{method:"POST",json:b});rows=await api("/"+path);draw()}
+  if(t.dataset.edit){const r=rows.find(x=>x.id===id);$("#f").innerHTML=F(fields,r);eid=id;root.querySelector("[data-save]").textContent="Save changes"}
+  if(t.dataset.del&&confirm("Delete this item?")){await api(`/${path}/${id}`,{method:"DELETE"});rows=await api("/"+path);draw()}
+  if(t.dataset.tog){const r=rows.find(x=>x.id===id);await api(`/${path}/${id}`,{method:"PUT",json:{approved:!r.approved}});rows=await api("/"+path);draw()}})}}
+/* ---- views ---- */
+const V={};
+V.Dashboard=async()=>{const s=await api("/stats");const k=[["Total orders",s.total_inquiries],["New inquiries",s.new],["Pending orders",s.pending],["Confirmed / in progress",s.confirmed],["Completed",s.completed],["Total customers",s.total_customers],["Total articles",s.total_articles],["Products",s.products],["Reviews to approve",s.pending_reviews]];
+ $("#v").innerHTML=`<div class="row">${k.map(x=>`<div class="card"><div class="m">${x[0]}</div><div class="stat">${x[1]}</div></div>`).join("")}</div>`};
+V.Orders=async()=>{let st="",q="";const root=$("#v");
+ const draw=async()=>{const rows=await api(`/orders?status=${encodeURIComponent(st)}&q=${encodeURIComponent(q)}`);
+ root.innerHTML=`<div class="card row"><select id="fs"><option value="">All statuses</option>${STAT.map(s=>`<option ${s===st?"selected":""}>${s}</option>`).join("")}</select><input id="fq" placeholder="Search reference, name, company, email" value="${esc(q)}"><button class="b" id="go">Search</button></div>
+ <div class="card"><table><tr><th>Reference</th><th>Customer</th><th>Request</th><th>Files</th><th>Status</th><th>Date</th></tr>${rows.map(r=>`<tr class="k" data-open="${r.id}"><td><b>${esc(r.reference)}</b></td>
+ <td>${esc(r.customer.name)}<br><span class="m">${esc(r.customer.company)}</span></td><td>${esc(r.type)}: ${esc(r.product_name)} x ${r.quantity}</td><td>${r.files}</td><td><span class="pill">${esc(r.status)}</span></td><td>${fd(r.created_at)}</td></tr>`).join("")||"<tr><td>No orders yet</td></tr>"}</table></div>`;
+ $("#go").onclick=()=>{st=$("#fs").value;q=$("#fq").value;draw()}};
+ root.onclick=wrap(e=>{const r=e.target.closest("[data-open]");if(r)openOrder(+r.dataset.open,draw)});await draw()};
+async function openOrder(id,back){const o=await api("/orders/"+id),root=$("#v"),c=o.customer;
+ const line=(d="",q=o.quantity||1,p=0)=>`<div class="it"><input placeholder="Description" value="${esc(d)}"><input type="number" step="any" value="${q}"><input type="number" step="any" value="${p}"></div>`;
+ root.innerHTML=`<p><button class="b s" id="bk">Back to orders</button></p><div class="card"><h3>${esc(o.reference)} <span class="pill">${esc(o.status)}</span></h3>
+ <p><b>${esc(c.name)}</b> ${esc(c.company)}<br>${esc(c.email)} | WhatsApp ${esc(c.whatsapp)}</p><p><b>${esc(o.type)}:</b> ${esc(o.product_name)} x ${o.quantity}</p>
+ <p><b>Customization:</b> ${esc(o.customization)||"-"}<br><b>Notes:</b> ${esc(o.notes)||"-"}</p>
+ <p><b>Attachments</b></p>${o.attachments.map(a=>`<button class="b s" data-dl="${a.id}" data-n="${esc(a.original_name)}">Download ${esc(a.original_name)} (${(a.size/1048576).toFixed(1)} MB)</button> `).join("")||"<span class=m>None</span>"}</div>
+ <div class="card"><h3>Order status</h3><div class="row"><select id="ns">${o.statuses.map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select><label><input type="checkbox" id="nn" checked style="width:auto"> Notify customer (email + WhatsApp)</label><button class="b g" id="us">Update status</button></div></div>
+ <div class="card"><h3>Quotations and invoices</h3><table><tr><th>Number</th><th>Total</th><th>Email</th><th>WhatsApp</th><th>Created</th><th></th></tr>${o.documents.map(d=>`<tr><td>${esc(d.number)} <span class="m">rev ${d.version}</span></td><td>${esc(d.currency)} ${Number(d.total).toFixed(2)}</td><td>${esc(d.email_status)}</td><td>${esc(d.whatsapp_status)}</td><td>${fd(d.created_at)}</td>
+ <td><button class="b s" data-pdf="${d.id}" data-n="${esc(d.number)}">PDF</button> <button class="b s" data-send="${d.id}">Send / resend</button></td></tr>`).join("")||"<tr><td>None yet</td></tr>"}</table>
+ <h4>Create a new quotation or invoice (a revision creates a new version)</h4><div class="row"><div><label>Type</label><select id="dk"><option value="quotation">Quotation</option><option value="invoice">Invoice</option></select></div>
+ <div><label>Currency</label><input id="dc" value="USD"></div><div><label>Tax %</label><input id="dt" type="number" value="0" step="any"></div><div><label>Extra charges (customization etc.)</label><input id="de" type="number" value="0" step="any"></div><div><label>Extra charges note</label><input id="dn"></div></div>
+ <p class="m">Line items: description, quantity, unit price. Prices are set by you; website prices are never final.</p><div id="its">${line(o.product_name)}</div><p><button class="b s" id="al">+ Add line</button></p>
+ <label>Payment terms (optional)</label><textarea id="dm" rows="2"></textarea><p><label><input type="checkbox" id="ds" style="width:auto"> Send now by email and WhatsApp</label></p><button class="b g" id="cd">Create PDF</button></div>
+ <div class="card"><h3>Communication history</h3><table>${o.notifications.map(n=>`<tr><td>${fd(n.created_at)}</td><td>${esc(n.channel)}</td><td>${esc(n.recipient)}</td><td>${esc(n.subject)}</td><td><span class="pill">${esc(n.status)}</span> <span class="m">${esc(n.detail)}</span></td></tr>`).join("")||"<tr><td>None</td></tr>"}</table></div>`;
+ $("#bk").onclick=()=>V.Orders();$("#al").onclick=()=>$("#its").insertAdjacentHTML("beforeend",line("",1,0));
+ $("#us").onclick=wrap(async()=>{await api(`/orders/${id}/status`,{method:"PATCH",json:{status:$("#ns").value,notify:$("#nn").checked}});openOrder(id)});
+ $("#cd").onclick=wrap(async()=>{const items=[...document.querySelectorAll("#its .it")].map(r=>{const i=r.querySelectorAll("input");return{description:i[0].value,qty:+i[1].value,unit_price:+i[2].value}}).filter(x=>x.description);
+  await api(`/orders/${id}/documents`,{method:"POST",json:{kind:$("#dk").value,currency:$("#dc").value,tax_percent:+$("#dt").value,extra_charges:+$("#de").value,extra_note:$("#dn").value,terms:$("#dm").value,items,send:$("#ds").checked}});setTimeout(()=>openOrder(id),800)});
+ root.onclick=wrap(async e=>{const t=e.target;if(t.dataset.dl)dl(`/attachments/${t.dataset.dl}/download`,t.dataset.n);if(t.dataset.pdf)dl(`/documents/${t.dataset.pdf}/pdf`,t.dataset.n+".pdf");
+  if(t.dataset.send&&confirm("Send this document to the customer by email and WhatsApp?")){await api(`/documents/${t.dataset.send}/send`,{method:"POST"});setTimeout(()=>openOrder(id),1500)}})}
+V.Products=async()=>{const [cats]=await Promise.all([api("/categories")]);let rows=await api("/products"),eid=null;const root=$("#v");
+ const fl=[{k:"name",l:"Name"},{k:"category_id",l:"Category",t:"select",o:[["","(none)"],...cats.map(c=>[c.id,c.name])]},{k:"moq",l:"Minimum bulk quantity",t:"number"},{k:"etsy_url",l:"Etsy link (optional)"},{k:"sort_order",l:"Sort order",t:"number"},{k:"available",l:"Available",t:"check"},
+  {k:"description",l:"Description",t:"area"},{k:"specs",l:"Specifications (one per line)",t:"area"},{k:"customization",l:"Customization options",t:"area"}];
+ const media=p=>`<div class="thumbs">${p.media.map(m=>`<div class="th">${m.kind==="video"?`<video src="/media/${esc(m.path)}" muted></video>`:`<img src="/media/${esc(m.path)}" alt="">`}<div><input type="number" value="${m.sort_order}" data-so="${m.id}" title="Sort order"></div><button class="b s r" data-dm="${m.id}">Remove</button></div>`).join("")}</div>
+  <p><label>Upload images or videos (JPG, PNG, WEBP, MP4, MOV, WEBM)</label><input type="file" id="mf" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm"> <button class="b s g" data-up>Upload</button></p>`;
+ const draw=()=>{const p=rows.find(x=>x.id===eid);root.innerHTML=`<div class="card"><h3>${p?"Edit: "+esc(p.name):"Add product"}</h3><div class="row" id="f">${F(fl,p||{available:true,moq:50})}</div><p><button class="b g" data-save>${p?"Save changes":"Add product"}</button> ${p?'<button class="b s" data-new>New product</button>':""}</p>${p?media(p):'<p class="m">Save the product first, then upload images.</p>'}</div>
+  <div class="card"><table><tr><th>Name</th><th>MOQ</th><th>Images</th><th>Status</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.moq}</td><td>${r.media.length}</td><td>${r.available?"Available":"Hidden"}</td><td><button class="b s" data-edit="${r.id}">Edit</button> <button class="b s r" data-del="${r.id}">Delete</button></td></tr>`).join("")}</table></div>`};
+ draw();const reload=async()=>{rows=await api("/products");draw()};
+ root.onchange=wrap(async e=>{if(e.target.dataset.so){await api("/media/"+e.target.dataset.so,{method:"PATCH",json:{sort_order:e.target.value}});await reload()}});
+ root.onclick=wrap(async e=>{const t=e.target,d=t.dataset;
+  if("save" in d){const b=R($("#f"),fl);if(eid){await api("/products/"+eid,{method:"PUT",json:b})}else{eid=(await api("/products",{method:"POST",json:b})).id}await reload()}
+  if("new" in d){eid=null;draw()}if(d.edit){eid=+d.edit;draw();scrollTo(0,0)}
+  if(d.del&&confirm("Delete this product and its media?")){await api("/products/"+d.del,{method:"DELETE"});eid=null;await reload()}
+  if(d.dm){await api("/media/"+d.dm,{method:"DELETE"});await reload()}
+  if("up" in d){const fs=$("#mf").files;if(!fs.length)return;const f=new FormData();[...fs].forEach(x=>f.append("files",x));t.textContent="Uploading...";await api(`/products/${eid}/media`,{method:"POST",body:f});await reload()}})};
+V.Videos=async()=>{const root=$("#v");const draw=async()=>{const all=await (await fetch("/api/factory-videos")).json();
+ root.innerHTML=`<div class="card"><h3>Manufacturing unit gallery</h3><div class="row"><div><label>Title</label><input id="vt"></div><div><label>Files (MP4, MOV, WEBM, or photos)</label><input type="file" id="vf" multiple accept=".mp4,.mov,.webm,.jpg,.jpeg,.png,.webp"></div></div><p><button class="b g" id="vu">Upload</button> <span class="m">Large videos can take a while to upload.</span></p></div>
+ <div class="card thumbs">${all.map(m=>`<div class="th">${m.kind==="video"?`<video src="/media/${esc(m.path)}" muted></video>`:`<img src="/media/${esc(m.path)}" alt="">`}<div class="m">${esc(m.title)}</div><input type="number" value="${m.sort_order}" data-so="${m.id}"><button class="b s r" data-dm="${m.id}">Remove</button></div>`).join("")||"<span class=m>No videos yet</span>"}</div>`;
+ $("#vu").onclick=wrap(async()=>{const fs=$("#vf").files;if(!fs.length)return;const f=new FormData();f.append("title",$("#vt").value);[...fs].forEach(x=>f.append("files",x));$("#vu").textContent="Uploading...";await api("/factory-videos",{method:"POST",body:f});draw()})};
+ root.onclick=wrap(async e=>{if(e.target.dataset.dm){await api("/media/"+e.target.dataset.dm,{method:"DELETE"});draw()}});
+ root.onchange=wrap(async e=>{if(e.target.dataset.so){await api("/media/"+e.target.dataset.so,{method:"PATCH",json:{sort_order:e.target.value}});draw()}});await draw()};
+V.Categories=crud("categories",[{k:"name",l:"Name"},{k:"sort_order",l:"Sort order",t:"number"}],[[r=>r.name,"Name"],[r=>r.sort_order,"Order"]],"Product categories");
+V.Services=crud("services",[{k:"title",l:"Title"},{k:"description",l:"Description",t:"area"},{k:"sort_order",l:"Sort order",t:"number"},{k:"active",l:"Show on website",t:"check"}],[[r=>r.title,"Title"],[r=>r.active?"Shown":"Hidden","Status"]],"Services");
+V.Articles=crud("articles",[{k:"title",l:"Title"},{k:"body",l:"Content",t:"area"},{k:"published",l:"Published",t:"check"}],[[r=>r.title,"Title"],[r=>r.published?"Published":"Draft","Status"]],"Articles");
+V.Reviews=crud("reviews",[{k:"name",l:"Name"},{k:"company",l:"Company"},{k:"rating",l:"Rating (1-5)",t:"number"},{k:"text",l:"Review",t:"area"},{k:"approved",l:"Approved",t:"check"}],[[r=>r.name,"Name"],[r=>r.rating+"/5","Rating"],[r=>r.text.slice(0,80),"Review"],[r=>r.approved?"Published":"Waiting","Status"]],"Customer reviews (approve before they show)",true);
+V.Customers=async()=>{const rows=await api("/customers");$("#v").innerHTML=`<div class="card"><table><tr><th>Name</th><th>Company</th><th>Email</th><th>WhatsApp</th><th>Since</th></tr>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.company)}</td><td>${esc(r.email)}</td><td>${esc(r.whatsapp)}</td><td>${fd(r.created_at)}</td></tr>`).join("")}</table></div>`};
+V.Settings=async()=>{const s=await api("/settings"),L=s.location||{};$("#v").innerHTML=`<div class="card"><h3>Business location (Google Map)</h3>
+ <div class="row"><div><label>Address shown on the website</label><input id="lb" value="${esc(L.label)}"></div><div><label>Map search text (full address or place name)</label><input id="lq" value="${esc(L.query)}"></div></div>
+ <p class="m">Optional, for an exact pin: in Google Maps choose Share, then Embed a map, and paste only the link that starts with https://www.google.com/maps/embed</p>
+ <div class="row"><div><label>Embed link (optional)</label><input id="le2" value="${esc(L.embed_url)}"></div><div><label>Google Maps share link (optional)</label><input id="ll" value="${esc(L.link)}"></div></div><p><button class="b g" id="sl">Save location</button></p></div>
+ <div class="card"><h3>Etsy store links</h3><p class="m">JSON list. Each item: name, url, note. These show in the Etsy section of the homepage.</p><textarea id="es" rows="12">${esc(JSON.stringify(s.etsy_links||[],null,2))}</textarea><p><button class="b g" id="ss">Save</button></p></div>`;
+ $("#sl").onclick=wrap(async()=>{await api("/settings/location",{method:"PUT",json:{value:{label:$("#lb").value,query:$("#lq").value,embed_url:$("#le2").value,link:$("#ll").value}}});alert("Saved")});
+ $("#ss").onclick=wrap(async()=>{let v;try{v=JSON.parse($("#es").value)}catch(x){return alert("That is not valid JSON")}await api("/settings/etsy_links",{method:"PUT",json:{value:v}});alert("Saved")})};
+function start(){$("#login").hidden=true;$("#app").hidden=false;const names=Object.keys(V);$("#nav").innerHTML=names.map(n=>`<button data-v="${n}">${n}</button>`).join("");
+ $("#nav").onclick=e=>{const n=e.target.dataset.v;if(!n)return;document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b===e.target));wrap(V[n])()};$("#nav button").click()}
+if(T)start();
+</script></body></html>
